@@ -1,72 +1,53 @@
--- 1 Все товары, в названии которых есть "urgent" или название начинается с "Animal".
+--1. Посчитать среднюю цену товара, общую сумму продажи по месяцам.
 SELECT 
-    StockItemName
-FROM Warehouse.StockItems
-WHERE StockItemName LIKE '%urgent%' 
-   OR StockItemName LIKE 'Animal%';
+    DATETRUNC(month, o.[OrderDate])     AS [SalesMonth],
+    AVG(ol.[UnitPrice])                 AS [AvgUnitPrice],
+    SUM(ol.[Quantity] * ol.[UnitPrice]) AS [TotalOrderAmount]
+FROM [Sales].[Orders] AS o
+INNER JOIN [Sales].[OrderLines] AS ol 
+    ON o.[OrderID] = ol.[OrderID]
+GROUP BY 
+    DATETRUNC(month, o.[OrderDate])
+ORDER BY 
+    [SalesMonth];
 
--- 2 Поставщиков (Suppliers), у которых не было сделано ни одного заказа (PurchaseOrders).
+
+--2. Отобразить все месяцы, где общая сумма продаж превысила 4 600 000.
 SELECT 
-    s.SupplierID, 
-    s.SupplierName
-FROM Purchasing.Suppliers AS s
-WHERE NOT EXISTS (
-    SELECT 1 
-    FROM Purchasing.PurchaseOrders AS po 
-    WHERE po.SupplierID = s.SupplierID
-);
+    DATETRUNC(month, o.[OrderDate])     AS [SalesMonth],
+    SUM(ol.[Quantity] * ol.[UnitPrice]) AS [TotalOrderAmount]
+FROM [Sales].[Orders] AS o
+INNER JOIN [Sales].[OrderLines] AS ol 
+    ON o.[OrderID] = ol.[OrderID]
+GROUP BY 
+    DATETRUNC(month, o.[OrderDate])
+HAVING 
+    SUM(ol.[Quantity] * ol.[UnitPrice]) > 4600000
+ORDER BY 
+    [SalesMonth];
 
--- 3 Заказы (Orders) с ценой товара (UnitPrice) более 100$ либо количеством единиц (Quantity) 
--- товара более 20 штуки присутствующей датой комплектации всего заказа (PickingCompletedWhen).
-select
-	o.OrderDate,
-	o.OrderDate,
-	o.PickingCompletedWhen,
-	ol.Description as ItemDescription,
-	ol.UnitPrice,
-	ol.Quantity
-from [Sales].[Orders] as o
-inner join [Sales].[OrderLines] as ol on o.OrderID = ol.OrderID
-where o.PickingCompletedWhen is not null      -- присутствующей датой комплектации всего заказа (PickingCompletedWhen).
-and (ol.UnitPrice > 100 or ol.Quantity > 20); -- (UnitPrice) > 100$ ИЛИ (Quantity) > 20 штуки
 
--- Заказы поставщикам (Purchasing.Suppliers), которые должны быть исполнены (ExpectedDeliveryDate) 
--- в январе 2013 года с доставкой "Air Freight" 
--- или "Refrigerated Air Freight" (DeliveryMethodName) и которые исполнены (IsOrderFinalized).
+--3. Вывести сумму продаж, дату первой продажи и количество проданного по месяцам, по товарам, продажи которых менее 50 ед в месяц. 
+-- Группировка должна быть по году, месяцу, товару.
 SELECT 
-    s.SupplierName,
-    po.PurchaseOrderID,
-    po.ExpectedDeliveryDate,
-    dm.DeliveryMethodName,
-    po.IsOrderFinalized
-FROM Purchasing.Suppliers AS s
-JOIN Purchasing.PurchaseOrders AS po ON s.SupplierID = po.SupplierID
-JOIN Application.DeliveryMethods AS dm ON po.DeliveryMethodID = dm.DeliveryMethodID
-WHERE po.ExpectedDeliveryDate BETWEEN '2013-01-01' AND '2013-01-31'  -- Январь 2013
-  AND dm.DeliveryMethodName IN ('Air Freight', 'Refrigerated Air Freight') -- Способы доставки
-  AND po.IsOrderFinalized = 1;                                        -- Заказ исполнен
-
-
-
-
-----
-SELECT 
-    obj.name AS FK_Name,
-    sch.name AS SchemaName,
-    tab1.name AS TableName,
-    col1.name AS ColumnName,
-    tab2.name AS ReferencedTableName,
-    col2.name AS ReferencedColumnName
-FROM sys.foreign_key_columns fkc
-INNER JOIN sys.foreign_keys obj ON obj.object_id = fkc.constraint_object_id
-INNER JOIN sys.tables tab1 ON tab1.object_id = fkc.parent_object_id
-INNER JOIN sys.schemas sch ON tab1.schema_id = sch.schema_id
-INNER JOIN sys.columns col1 ON col1.column_id = parent_column_id AND col1.object_id = tab1.object_id
-INNER JOIN sys.tables tab2 ON tab2.object_id = fkc.referenced_object_id
-INNER JOIN sys.columns col2 ON col2.column_id = referenced_column_id AND col2.object_id = tab2.object_id
-WHERE tab1.name = 'PurchaseOrders' AND tab2.name = 'Suppliers';
--- WHERE tab1.name IN ('Suppliers', 'PurchaseOrders') 
--- OR tab2.name IN ('Suppliers', 'PurchaseOrders');
----
-
-
+    YEAR(o.[OrderDate])                    AS [SalesYear],
+    MONTH(o.[OrderDate])                   AS [SalesMonth],
+    ol.[StockItemID],
+    ol.[Description]                       AS [StockItemName],
+    SUM(ol.[Quantity] * ol.[UnitPrice])    AS [TotalSalesAmount],
+    MIN(o.[OrderDate])                     AS [FirstSaleDate],
+    SUM(ol.[Quantity])                     AS [TotalQuantity]
+FROM [Sales].[Orders] AS o
+INNER JOIN [Sales].[OrderLines] AS ol 
+    ON o.[OrderID] = ol.[OrderID]
+GROUP BY 
+    YEAR(o.[OrderDate]),
+    MONTH(o.[OrderDate]),
+    ol.[StockItemID],
+    ol.[Description]
+HAVING 
+    SUM(ol.[Quantity]) < 50
+ORDER BY 
+    [SalesYear],
+    [SalesMonth],
+    ol.[StockItemID];
