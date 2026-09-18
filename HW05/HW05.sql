@@ -201,44 +201,47 @@ ORDER BY p.[PersonID];
 
 -- 6. Выберите по каждому клиенту два самых дорогих товара, которые он покупал.
 --В результатах должно быть ид клиета, его название, ид товара, цена, дата покупки.
-WITH CustomerItemPurchases AS (
-    -- 1. Находим для каждого клиента и товара максимальную цену покупки и последнюю дату
+WITH RankedItemEvents AS (
+    -- 1. Для каждого товара клиента выбираем именно ту строку покупки, 
+    -- где цена была максимальной (при равенстве цен — берем самую свежую дату)
     SELECT 
         i.[CustomerID],
         il.[StockItemID],
-        MAX(il.[UnitPrice])   AS [UnitPrice],
-        MAX(i.[InvoiceDate])  AS [PurchaseDate]
+        il.[UnitPrice],
+        i.[InvoiceDate] AS [PurchaseDate],
+        ROW_NUMBER() OVER (
+            PARTITION BY i.[CustomerID], il.[StockItemID]
+            ORDER BY il.[UnitPrice] DESC, i.[InvoiceDate] DESC, il.[InvoiceLineID] DESC
+        ) AS [ItemEventRank]
     FROM [Sales].[Invoices] AS i
     INNER JOIN [Sales].[InvoiceLines] AS il 
         ON i.[InvoiceID] = il.[InvoiceID]
-    GROUP BY 
-        i.[CustomerID],
-        il.[StockItemID]
 ),
-RankedCustomerItems AS (
-    -- 2. Ранжируем товары внутри каждого клиента по убыванию цены
+TopUniqueItemsPerCustomer AS (
+    -- 2. Берем только лучшие покупки каждого товара и ранжируем уже товары между собой
     SELECT 
-        cip.[CustomerID],
-        cip.[StockItemID],
-        cip.[UnitPrice],
-        cip.[PurchaseDate],
+        rie.[CustomerID],
+        rie.[StockItemID],
+        rie.[UnitPrice],
+        rie.[PurchaseDate],
         ROW_NUMBER() OVER (
-            PARTITION BY cip.[CustomerID]
-            ORDER BY cip.[UnitPrice] DESC, cip.[StockItemID] ASC
-        ) AS [ItemPriceRank]
-    FROM CustomerItemPurchases AS cip
+            PARTITION BY rie.[CustomerID]
+            ORDER BY rie.[UnitPrice] DESC, rie.[StockItemID] ASC
+        ) AS [OverallRank]
+    FROM RankedItemEvents AS rie
+    WHERE rie.[ItemEventRank] = 1
 )
--- 3. Выбираем топ-2 дорогих товара и подтягиваем имя клиента
+-- 3. Оставляем 2 самых дорогих товара на клиента и подтягиваем имя
 SELECT 
     c.[CustomerID],
     c.[CustomerName],
-    rci.[StockItemID],
-    rci.[UnitPrice],
-    rci.[PurchaseDate]
-FROM RankedCustomerItems AS rci
+    t.[StockItemID],
+    t.[UnitPrice],
+    t.[PurchaseDate]
+FROM TopUniqueItemsPerCustomer AS t
 INNER JOIN [Sales].[Customers] AS c 
-    ON rci.[CustomerID] = c.[CustomerID]
-WHERE rci.[ItemPriceRank] <= 2
+    ON t.[CustomerID] = c.[CustomerID]
+WHERE t.[OverallRank] <= 2
 ORDER BY 
     c.[CustomerID], 
-    rci.[ItemPriceRank];
+    t.[OverallRank];
